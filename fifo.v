@@ -16,7 +16,6 @@
 module fifo(
 	input clk_i, 
 	input rst_i, 
-	input clr_i,  
 	input [g_width-1:0] data_i, 
 	input push_i,
 	input pull_i
@@ -34,7 +33,6 @@ module fifo(
 	/*=============================================================================================
 	--  Locals
 	--=============================================================================================*/
-
 	reg     [g_width-1:0]		mem[0:g_depth-1];
 	reg     [c_ptr_width:0]   	wr_ptr, rd_ptr;
 	reg     [c_ptr_width:0]   	wr_ptr_next, rd_ptr_next;
@@ -43,15 +41,13 @@ module fifo(
 	/*=============================================================================================
 	--  Pointer settting
 	--=============================================================================================*/
-	always @(posedge clk_i)
-        if(rst_i)	wr_ptr <= 0;
-        else if(clr_i) wr_ptr <= 0;
+	always @(posedge clk_i, negedge rst_i)
+        if(!rst_i)	wr_ptr <= 0;
         else if(push_i)  wr_ptr <= wr_ptr_next;
 
 		
-	always @(posedge clk_i)
-        if(rst_i)	rd_ptr <= 0;
-        else if(clr_i)	rd_ptr <= 0;
+	always @(posedge clk_i, negedge rst_i)
+        if(!rst_i)	rd_ptr <= 0;
         else if(pull_i)	rd_ptr <= rd_ptr_next;
 		
 	assign wr_ptr_next <= wr_ptr + 1;
@@ -69,9 +65,8 @@ module fifo(
 	assign full_o  = (wr_ptr == rd_ptr) &  gb;
 
 	// Guard Bit ...
-	always @(posedge clk_i)
-		if(rst_i)							gb <= 0;
-		else if(clr_i) 						gb <= 0;
+	always @(posedge clk_i, negedge rst_i)
+		if(!rst_i)							gb <= 0;
 		else if((wr_ptr_next == rp) & we)	gb <= 1;
 		else if(pull_i)					    gb <= 0;
 

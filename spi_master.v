@@ -148,7 +148,6 @@ module spi_master (
     -- Each phase is selected so that all the registers can be clocked with a rising edge on all SPI
     -- modes, by a single high-speed global clock, preserving clock resources and clock to data skew.
     ----------------------------------------------------------------------------------------------*/
-    
 	wire sclk_y
 	
 	generate
@@ -180,9 +179,9 @@ module spi_master (
 	end;
 	
 
-    //-----------------------------------------------------------------------------------------------
+    /*-----------------------------------------------------------------------------------------------
     // Sampling clock enable generation: generate 'samp_ce' from 'clk_en_y' depending on CPHA
-    // always sample data at the half-cycle of the fsm update cell
+    // always sample data at the half-cycle of the fsm update cell*/
 	wire samp_ce;
 	
 	generate
@@ -194,10 +193,10 @@ module spi_master (
 			fsm_ce <= clk_en_y;
 	endgenerate
 	
-	//=============================================================================================
+	/*=============================================================================================
     //  REGISTERED INPUTS
     //-=============================================================================================
-    // rx bit flop: capture rx bit after SAMPLE edge of sck
+    // rx bit flop: capture rx bit after SAMPLE edge of sck */
 	reg rx_bit_reg;
 	
     always @(posedge sclk_i) is
@@ -206,12 +205,12 @@ module spi_master (
             rx_bit_reg <= spi_miso_i;
 	end
 	
-	//============================================================================================
+	/*============================================================================================
     //  CROSS-CLOCK PIPELINE TRANSFER LOGIC
     //=============================================================================================
     // do_valid_o and di_req_o strobe output logic
     // this is a delayed pulse generator with a ripple-transfer FFD pipeline, that generates a 
-    // fixed-length delayed pulse for the output flags, at the parallel clock domain
+    // fixed-length delayed pulse for the output flags, at the parallel clock domain */
     reg [] data_o_shiftreg_y;
 	
 	always @ (posedge clk_i)
