@@ -12,22 +12,24 @@
 -- 2017.apr.2	|	hp3265	||	Initial version
 --
 -----------------------------------------------------------------------------------------------------------------------*/
+`include "utils.v"
 
 module fifo(
 	input clk_i, 
 	input rst_i, 
 	input [g_width-1:0] data_i, 
 	input push_i,
-	input pull_i
+	input pull_i,
 	output [g_width-1:0] data_o, 
 	output full_o, 
 	output empty_o
 );
 
-	parameter g_depth = 1;
 	parameter g_width = 32;
+	parameter g_depth = 1;
 
-	localparam c_ptr_width = clog2(g_depth);
+	`CLOGB2(clogb2);
+	localparam c_ptr_width = clogb2(g_depth);
 
 
 	/*=============================================================================================
@@ -35,7 +37,7 @@ module fifo(
 	--=============================================================================================*/
 	reg     [g_width-1:0]		mem[0:g_depth-1];
 	reg     [c_ptr_width:0]   	wr_ptr, rd_ptr;
-	reg     [c_ptr_width:0]   	wr_ptr_next, rd_ptr_next;
+	wire    [c_ptr_width:0]   	wr_ptr_next, rd_ptr_next;
 	reg							gb;
 
 	/*=============================================================================================
@@ -49,9 +51,10 @@ module fifo(
 	always @(posedge clk_i, negedge rst_i)
         if(!rst_i)	rd_ptr <= 0;
         else if(pull_i)	rd_ptr <= rd_ptr_next;
-		
-	assign wr_ptr_next <= wr_ptr + 1;
-	assign rd_ptr_next <= rd_ptr + 1;
+	
+	`TRUNC(trunc_signal, c_ptr_width + 1, c_ptr_width);
+	assign wr_ptr_next = trunc_signal(wr_ptr + 1);
+	assign rd_ptr_next = trunc_signal(rd_ptr + 1);
 
 	// Fifo Output
 	assign  data_o = mem[ rd_ptr ];
@@ -66,8 +69,8 @@ module fifo(
 
 	// Guard Bit ...
 	always @(posedge clk_i, negedge rst_i)
-		if(!rst_i)							gb <= 0;
-		else if((wr_ptr_next == rp) & we)	gb <= 1;
-		else if(pull_i)					    gb <= 0;
+		if(!rst_i)											gb <= 0;
+		else if((wr_ptr_next == rd_ptr) & push_i)	gb <= 1;
+		else if(pull_i)					    			gb <= 0;
 
 endmodule

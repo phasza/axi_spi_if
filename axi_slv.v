@@ -8,86 +8,84 @@
 --					AXI4-Lite Slave interface
 --					Converts AXI4-Lite compliance requests into FIFO data for further processing
 --						AXI4 to AXI4-Lite conversion is not supported
---						However, every requests are responded by DECERR, which is not AXI4-Lite compliant
+--						Not protected against non AXI4-Lite access, this means an AXI4 access can cause deadlock for the Master
+--						(i.e. the module won't send enough responses back for accesses having Axlen > 0)
 --
 ------------------------------ REVISION HISTORY -----------------------------------------------------------------------
---
 -- 2017.apr.2	|	hp3265	||	Initial version
---
+-- 2017.apr.15 |  hp3265 	||	Completed FSMs
+-- 2017.apr.20 |  hp3265 	||	Removed unnecessary generics
+-- 2017.apr.23 |  hp3265 	||	Some comments and beautifying
 -----------------------------------------------------------------------------------------------------------------------*/
 
-// TODO make it protected against non Lite compliant requests
-
-module axi4_lite_slv(
+module axi4_lite_slv #(
 
 	/* Generic Parameters */
-	parameter g_axi_data_width		= 32,						// Generic for AXI Data width
-	parameter g_axi_addr_width		= 28,						// Generic for AXI Address width
-	
-	localparam c_log2_data_width   = clogb2(g_axi_data_width)
+	parameter g_axi_addr_width	= 28							// Generic for AXI Address width
 	
 	) (
 	
 	/* System Clock and Reset */
-	input			aclk_i,										// System clock
-	input			areset_n_i,									// System asynchronous reset
+	input											aclk_i,			// AXI clock
+	input											areset_n_i,		// AXI asynchronous reset
 
     // AXI Write Address channel signals
 	input 										awvalid_i,
 	output										awready_o,
-	input 			[g_axi_addr_width-1:0] 		awaddr_i,
-	input										awprot_i,
+	input 	[g_axi_addr_width-1:0] 		awaddr_i,
+	input											awprot_i,
 	
 	
 	// AXI Write Data channel signals
-	input										wvalid_i,
+	input											wvalid_i,
 	output										wready_o,
-	input			[g_axi_data_width-1:0]		wdata_i,
-	input			[c_log2_data_width-1:0]		wstrb_i,
+	input		[31:0]							wdata_i,
+	input		[3:0]								wstrb_i,
 	
 	// AXI Wrie response channel
 	output										bvalid_o,
-	input										bready_i,
-	output			[1:0]						bresp_o,
+	input											bready_i,
+	output	[1:0]								bresp_o,
 	
 	// AXI Read address channel
-	input										arvalid_i,
+	input											arvalid_i,
 	output										arready_o,
-	input			[g_axi_addr_width-1:0]		araddr_i,
-	input			[2:0]						arprot_i,
+	input		[g_axi_addr_width-1:0]		araddr_i,
+	input		[2:0]								arprot_i,
 	
 	// AXI Read data channel
 	output										rvalid_o,
-	input										rready_i,
-	output			[g_axi_data_width-1:0]		rdata_o,
-	output			[1:0]						rresp_o,
+	input											rready_i,
+	output	[31:0]							rdata_o,
+	output	[1:0]								rresp_o,
 	
 	// Write Request FIFO signals
-	input										wr_req_full_i,
-	output			[g_wr_req_width-1:0]		wr_req_data_o,
+	input											wr_req_full_i,
+	output	[1:0]								wr_req_data_o,
 	output										wr_req_push_o,
 	
 	// Write Data FIFO signals
-	input										wr_data_full_i,
-	output			[g_wr_data_width-1:0]		wr_data_data_o,
+	input											wr_data_full_i,
+	output	[35:0]							wr_data_data_o,
 	output										wr_data_push_o,
 	
 	// Write Response FIFO signals
-	input										wr_resp_empty_i,
-	input			[g_wr_resp_width-1:0]		wr_resp_data_i,
-	output										wr_resp_pull_i,
+	input											wr_resp_empty_i,
+	input		[1:0]								wr_resp_data_i,
+	output										wr_resp_pull_o,
 	
 	// Read Request FIFO signals
-	input										rd_req_full_i,
-	output			[g_rd_req_width-1:0]		rd_req_data_o,
+	input											rd_req_full_i,
+	output	[1:0]								rd_req_data_o,
 	output										rd_req_push_o,
 	
 	// Read Resp FIFO signals
-	input										rd_resp_empty_i,
-	input			[g_rd_data_width-1:0]		rd_resp_data_i,
+	input											rd_resp_empty_i,
+	input		[33:0]							rd_resp_data_i,
 	output										rd_resp_pull_o
 );
 
+	// State info enum type
 	parameter [1:0]
 		IDLE = 2'd0,
 		STORE_REQ = 2'd1,
@@ -95,14 +93,15 @@ module axi4_lite_slv(
 		SEND_RESP = 2'd3;
 		
     /*=============================================================================================
-    --  WRITE ADDRESS CHANNEL FSM
+    --  WRITE ADDRESS CHANNEL FSM		-- Moore type
     --=============================================================================================*/
 	reg 	awready_y;
-	reg		wr_req_push_y;
-	reg [2:0]
-		wr_req_state, wr_req_state_next;
+	reg	wr_req_push_y;
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	reg [1:0] wr_req_state, wr_req_state_next;
+	
+	// Set current state to next state every CLK rise
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_req_state <= IDLE;
@@ -110,61 +109,79 @@ module axi4_lite_slv(
 			wr_req_state <= wr_req_state_next;
 	end
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	// Main WR REQ FSM block
+	always @ (posedge aclk_i)
 	begin
 		case (wr_req_state)
+			// When IDLE:
+			//		be ready to accept a request 	-> awready HIGH
+			//		do not touch the FIFO			-> fifo_push LOW
 			IDLE :
 				begin
 					awready_y <= 1;
 					wr_req_push_y <= 0;
 				end
 		
+			// When STORE_REQ:
+			//		deassert ready -> awready LOW
+			//		push to FIFO	-> fifo_push HIGH
 			STORE_REQ :
 				begin
 					awready_y <= 0;
 					wr_req_push_y <= 1;
 				end
+				
+			// When WAIT_READY:
+			//		keep ready deasserted -> awready LOW
+			//		do not touch the FIFO -> fifo_push LOW
 			WAIT_READY :
 				begin
 					awready_y <= 0;
 					wr_req_push_y <= 0;
 				end
-			default :	// Should never go into default state
+				
+			// When default:
+			//		Should never go into this state, it's only for full_case synthesis
+			//		but if it does, keep everything LOW
+			default :
 				begin
 					awready_y <= 0;
 					wr_req_push_y <= 0;
 				end
 		endcase;
 	end
-		
-	always @ (posedge aclk_i, negedge areset_n_i)
+	
+	// Next state selector
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_req_state_next <= IDLE;
 		else
 		begin
-			if (awvalid_i and (!wr_req_full_i))
-				wr_req_state_next <= #1 STORE_REQ; // Added delay to avoid hold-time problems
-			else if (awvalid_i and wr_req_full_i)
+			if (awvalid_i & (!wr_req_full_i))			// If next reqest valid, and WR fifo isn't full
+				wr_req_state_next <= STORE_REQ;
+			else if (awvalid_i & wr_req_full_i)		   // If next reqest valid but WR fifo is full
 				wr_req_state_next <= #1 WAIT_READY;
-			else
+			else													// Else
 				wr_req_state_next <= #1 IDLE;	
 		end
 	end
 	
-	assign awready_o <= awready_y;
-	assign wr_req_push_o <= wr_req_push_y;
-	assign wr_req_data_o <= awaddr_i;
+	// assign outputs
+	assign awready_o = awready_y;
+	assign wr_req_push_o = wr_req_push_y;
+	assign wr_req_data_o = awaddr_i[1:0];
 	
     /*=============================================================================================
-    --  WRITE DATA CHANNEL FSM
+    --  WRITE DATA CHANNEL FSM		-- Moore type
     --=============================================================================================*/
 	reg 	wready_y;
-	reg		wr_data_push_y;
+	reg	wr_data_push_y;
 	reg [2:0]
 		wr_data_state, wr_data_state_next;
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	// Drive state into next state
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_data_state <= IDLE;
@@ -172,26 +189,41 @@ module axi4_lite_slv(
 			wr_data_state <= wr_data_state_next;
 	end
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	// Main FSM block
+	always @ (posedge aclk_i)
 	begin
 		case (wr_data_state)
+			// When IDLE:
+			//		be ready to accept data -> wready HIGH
+			//		don't touch the fifo		-> fifo_push LOW
 			IDLE :
 				begin
 					wready_y <= 1;
 					wr_data_push_y <= 0;
 				end
-		
+				
+			// When STORE_REQ:
+			//		deassert ready 		-> wready LOW
+			//		push data to FIFO		-> fifo_push HIGH
 			STORE_REQ :
 				begin
 					wready_y <= 0;
 					wr_data_push_y <= 1;
 				end
+				
+			// When WAIT_READY:
+			//		keep ready deasserted -> wready LOW
+			//		don't touch the fifo	 -> fifo_push HIGH
 			WAIT_READY :
 				begin
 					wready_y <= 0;
 					wr_data_push_y <= 0;
 				end
-			default :	// Should never go into default state
+				
+			// When default:
+			//		Should never go into this state, it's only for full_case synthesis
+			//		but if it does, keep everything LOW
+			default :
 				begin
 					wready_y <= 0;
 					wr_data_push_y <= 0;
@@ -199,34 +231,36 @@ module axi4_lite_slv(
 		endcase;
 	end
 		
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_data_state_next <= IDLE;
 		else
 		begin
-			if (wvalid_i and (!wr_data_full_i))
-				wr_data_state_next <= #1 STORE_REQ; // Added delay to avoid hold-time problems
-			else if (wvalid_i and wr_data_full_i)
-				wr_data_state_next <= #1 WAIT_READY;
-			else
-				wr_data_state_next <= #1 IDLE;	
+			if (wvalid_i & (!wr_data_full_i))			// If data is valid and FIFO is not full
+				wr_data_state_next <= STORE_REQ;
+			else if (wvalid_i & wr_data_full_i)			// If data is valid but FIFO is not full
+				wr_data_state_next <= WAIT_READY;
+			else													// Else
+				wr_data_state_next <= IDLE;	
 		end
 	end
 	
-	assign wready_o <= wready_y;
-	assign wr_data_push_o <= wr_data_push_y;
-	assign wr_data_data_o <= {wdata_i, wstrb_i};
+	// assign output
+	assign wready_o = wready_y;
+	assign wr_data_push_o = wr_data_push_y;
+	assign wr_data_data_o = {wdata_i, wstrb_i};
 	
     /*=============================================================================================
-    --  WRITE RESPONSE CHANNEL FSM
+    --  WRITE RESPONSE CHANNEL FSM			-- Moore type
     --=============================================================================================*/
 	reg 	bvalid_y;
-	reg		wr_resp_pull_y;
+	reg	wr_resp_pull_y;
 	reg [2:0]
 		wr_resp_state, wr_resp_state_next;
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	// Drive state into next state
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_resp_state <= IDLE;
@@ -234,21 +268,32 @@ module axi4_lite_slv(
 			wr_resp_state <= wr_resp_state_next;
 	end
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	// Main FSM block
+	always @ (posedge aclk_i)
 	begin
 		case (wr_resp_state)
+			// When IDLE:
+			//		no valid response 		-> bvalid LOW
+			//		don't touch the fifo		-> fifo_pull LOW
 			IDLE :
 				begin
 					bvalid_y <= 0;
 					wr_resp_pull_y <= 0;
 				end
 		
+			// When SEND_RESP:
+			//		valid response present	-> bvalid HIGH
+			//		pull data from FIFO		-> fifo_pull HIGH
 			SEND_RESP :
 				begin
 					bvalid_y <= 1;
 					wr_resp_pull_y <= 1;
 				end
-			default :	// Should never go into default state
+				
+			// When default:
+			//		Should never go into this state, it's only for full_case synthesis
+			//		but if it does, keep everything LOW
+			default :
 				begin
 					bvalid_y <= 0;
 					wr_resp_pull_y <= 0;
@@ -256,32 +301,34 @@ module axi4_lite_slv(
 		endcase;
 	end	
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			wr_resp_state_next <= IDLE;
 		else
 		begin
-			if (bready_i and (!wr_resp_empty_i))
-				wr_data_state_next <= #1 SEND_RESP; // Added delay to avoid hold-time problems
+			if (bready_i & (!wr_resp_empty_i))			// If Master is ready to accept data and there is a response in the FIFO
+				wr_resp_state_next <= SEND_RESP;
 			else
-				wr_data_state_next <= #1 IDLE;	
+				wr_resp_state_next <= IDLE;	
 		end
 	end
 	
-	assign bvalid_o <= bvalid_y;
-	assign wr_resp_pull_o <= wr_resp_pull_y;
-	assign bresp_o <= wr_resp_data_i;
+	// assign output
+	assign bvalid_o = bvalid_y;
+	assign wr_resp_pull_o = wr_resp_pull_y;
+	assign bresp_o = wr_resp_data_i;
 	
     /*=============================================================================================
     --  READ ADDRESS CHANNEL FSM
     --=============================================================================================*/
+	// Basically the same as the WRITE FSMs
 	reg 	arready_y;
-	reg		rd_req_push_y;
+	reg	rd_req_push_y;
 	reg [2:0]
 		rd_req_state, rd_req_state_next;
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			rd_req_state <= IDLE;
@@ -289,7 +336,7 @@ module axi4_lite_slv(
 			rd_req_state <= rd_req_state_next;
 	end
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i)
 	begin
 		case (rd_req_state)
 			IDLE :
@@ -316,34 +363,34 @@ module axi4_lite_slv(
 		endcase;
 	end
 		
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			rd_req_state_next <= IDLE;
 		else
 		begin
-			if (arvalid_i and (!rd_req_full_i))
-				rd_req_state_next <= #1 STORE_REQ; // Added delay to avoid hold-time problems
-			else if (arvalid_i and rd_req_full_i)
-				rd_req_state_next <= #1 WAIT_READY;
+			if (arvalid_i & (!rd_req_full_i))
+				rd_req_state_next <= STORE_REQ;
+			else if (arvalid_i & rd_req_full_i)
+				rd_req_state_next <= WAIT_READY;
 			else
-				rd_req_state_next <= #1 IDLE;	
+				rd_req_state_next <= IDLE;	
 		end
 	end	
 	
-	assign arready_o <= arready_y;
-	assign rd_req_push_o <= rd_req_push_y;
-	assign rd_req_data_o <= araddr_i;
+	assign arready_o = arready_y;
+	assign rd_req_push_o = rd_req_push_y;
+	assign rd_req_data_o = araddr_i[1:0];
 	
 	/*=============================================================================================
     --  READ DATA CHANNEL FSM
     --=============================================================================================*/
 	reg 	rvalid_y;
-	reg		rd_resp_pull_y;
+	reg	rd_resp_pull_y;
 	reg [2:0]
 		rd_resp_state, rd_resp_state_next;
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			rd_resp_state <= IDLE;
@@ -351,7 +398,7 @@ module axi4_lite_slv(
 			rd_resp_state <= rd_resp_state_next;
 	end
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i)
 	begin
 		case (rd_resp_state)
 			IDLE :
@@ -373,22 +420,22 @@ module axi4_lite_slv(
 		endcase;
 	end	
 	
-	always @ (posedge aclk_i, negedge areset_n_i)
+	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
 			rd_resp_state_next <= IDLE;
 		else
 		begin
-			if (rready_i and (!rd_resp_empty_i))
-				rd_resp_state_next <= #1 SEND_RESP; // Added delay to avoid hold-time problems
+			if (rready_i & (!rd_resp_empty_i))
+				rd_resp_state_next <= SEND_RESP;
 			else
-				rd_resp_state_next <= #1 IDLE;	
+				rd_resp_state_next <= IDLE;	
 		end
 	end
 	
-	assign rvalid_o <= rvalid_y;
-	assign rd_resp_pull_o <= rd_resp_pull_y;
-	assign rdata_o <= rd_resp_data_i[g_axi_data_width+1:2];
-	assign rresp_o <= rd_resp_data_i[1:0];
+	assign rvalid_o = rvalid_y;
+	assign rd_resp_pull_o = rd_resp_pull_y;
+	assign rdata_o = rd_resp_data_i[33:2];
+	assign rresp_o = rd_resp_data_i[1:0];
 	
 endmodule

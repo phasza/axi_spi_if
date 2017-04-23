@@ -12,13 +12,19 @@
 -- 2017.apr.2	|	hp3265	||	Initial version
 --
 -----------------------------------------------------------------------------------------------------------------------*/
-
-function integer clogb2;
-    input [31:0] value;
-    begin
-        value = value - 1;
-        for (clogb2 = 0; value > 0; clogb2 = clogb2 + 1) begin
-            value = value >> 1;
-        end
-    end
+`define CLOGB2(clogb2)             											\
+function integer clogb2;														\
+    input integer value;														\
+    begin																			\
+        value = value - 1;														\
+        for (clogb2 = 0; value > 0; clogb2 = clogb2 + 1) begin		\
+            value = value >> 1;												\
+        end																			\
+    end																				\
 endfunction
+
+`define TRUNC(trunc_signal, IN_LEFT_VAL, OUT_LEFT_VAL)            \
+function [OUT_LEFT_VAL:0] trunc_signal;									\
+	input [IN_LEFT_VAL:0] in_val;												\
+	trunc_signal = in_val[OUT_LEFT_VAL:0];									\
+endfunction 
