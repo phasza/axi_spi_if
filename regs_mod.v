@@ -38,13 +38,13 @@ module regs_mod (
 	/*=============================================================================================
 	--  Control Register		|		R(h)W
 	--=============================================================================================*/
-	//   spi_clk_div	|	7:0		||		Clock ratio AXI / SPI 								|| reset value : 0
+	//   spi_clk_div	|	3:0		||		Clock ratio AXI / SPI 								|| reset value : 1
+	//   reserved		|	7:4		||		default 0												|| reset value : 0
 	//   data_order	|	8:8		||		1: MSB first, 0: LSB first							|| reset value : 0
-	//	 CPOL  			|	9:9		||		1: SCLK HIGH in IDLE, 0: SCLK LOW in IDLE		|| reset value : 0
-	//	 CPHA	 			|	10:10		||		1: Leading edge setup, Trailing edge sample 
+	//	  CPOL  			|	9:9		||		1: SCLK HIGH in IDLE, 0: SCLK LOW in IDLE		|| reset value : 0
+	//	  CPHA	 		|	10:10		||		1: Leading edge setup, Trailing edge sample 
 	//												0: Leading edge sample, Trailing edge setup	|| reset value : 0
-	//	 spi_mode		|  11:11		||		1: QSPI,	0: SPI										|| reset value : 0
-	//	 reserved		|	31:12		||		default 0												|| reset value : 0
+	//	  reserved		|	31:11		||		default 0												|| reset value : 0
 	
 	reg [11:0] axi_spi_ctrl_reg;
 	
@@ -52,26 +52,31 @@ module regs_mod (
 	begin
 		if (!reset_n_i)
 		begin
-			axi_spi_ctrl_reg <= 0;
+			axi_spi_ctrl_reg <= 1;
 		end
 		else
 			if (reg_load_i & (reg_sel_i == 2'b0))
 			begin
-				axi_spi_ctrl_reg <= reg_data_i[11:0];
+				axi_spi_ctrl_reg <= reg_data_i[10:0];
 			end
 	end;
 	
-	assign reg_control_o = {20'd0, axi_spi_ctrl_reg};
+	assign reg_control_o = {21'd0, axi_spi_ctrl_reg};
 	
 	/*=============================================================================================
 	--  Transfer Control Register	|	R(h)W
 	--=============================================================================================*/
-	//   slv_0_en		|	0:0		||		SS 0 enable		(0 disable, 1 enable)			|| reset value : 1
-	//   slv_1_en		|	1:1		||		SS 1 enable		(0 disable, 1 enable)			|| reset value : 0
-	//   slv_2_en		|	2:2		||		SS 2 enable		(0 disable, 1 enable)			|| reset value : 0
-	//   slv_3_en		|	3:3		||		SS 3 enable		(0 disable, 1 enable)			|| reset value : 0
-	//   r_w_n			|	4:4		||		1: READ transfer, 0: WRITE transfer				|| reset value : 0
-	//   byte_num		|	12:5		||		Number of transferred bytes + 1					|| reset value : 0
+	//  slv_0_en		|	0:0		||		SS 0 enable		(0 disable, 1 enable)			|| reset value : 0
+	//  slv_1_en		|	1:1		||		SS 1 enable		(0 disable, 1 enable)			|| reset value : 0
+	//  slv_2_en		|	2:2		||		SS 2 enable		(0 disable, 1 enable)			|| reset value : 0
+	//  slv_3_en		|	3:3		||		SS 3 enable		(0 disable, 1 enable)			|| reset value : 0
+	//  reserved		|	4:4		||		default 0												|| reset value : 0	
+	//  Bits per trans|	6:5		||		Num of bits per tranfer								|| reset value : 0
+	//												00 - 8 default			
+	//												01	- 16
+	//												10 - 32
+	//												11 - ignored		
+	//	 reserved		|  12:7		|| 	default 0												|| reset value : 0
 	//	 trans_start   |  13:13   	||    1: Transfer is ready to start, 0: IDLE			|| reset value : 0
 	//	 reserved		|	31:14		||		default 0												|| reset value : 0
 	
@@ -81,7 +86,7 @@ module regs_mod (
 	begin
 		if (!reset_n_i)
 		begin
-			trans_ctrl_reg <= 14'd1;
+			trans_ctrl_reg <= 14'd0;
 		end
 		else
 			if (trans_start_i)
