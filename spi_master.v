@@ -1,3 +1,4 @@
+
 /*---------------------------------------------------------------------------------------------------------------------
 -- Author:          Peter Hasza, hasza.peti@gmail.com
 -- 
@@ -76,19 +77,26 @@ module spi_master (
 	/*=============================================================================================
     --  CLOCK GENERATION
     --=============================================================================================*/
-	wire sclk_y;
+
 	wire [3:0] clk_div_y;
-	wire cpol_y;
-	reg sclk_en_reg_y;
+	wire cpol_y,cpha_y;
 	
+	wire sclk_y;
 	assign clk_div_y = reg_control_i[3:0];
 	assign cpol_y = reg_control_i[9];
-		
-	CLK_gen sclk_gen(clk_i, sclk_en_reg_y,reset_n_i, clk_div_y, sclk_y);
+	assign cpha_y = reg_control_i[10];
+	reg clock_en_y;
+	
+	
+	wire msb_first;
+	assign msb_first = reg_control_i[8];
+	
+	CLK_gen sclk_gen(clk_i, clock_en_y, reset_n_i, clk_div_y, sclk_y);
 	
 	reg prev_sclk_y;
-	always @(posedge clk_i) prev_sclk_y <= sclk_y;
-	
+	always @ (posedge clk_i)
+			prev_sclk_y <= sclk_y;
+			
 	reg sclk_rise_y;
 	always @(posedge clk_i) 
 	begin
@@ -96,7 +104,7 @@ module spi_master (
 			sclk_rise_y <= 1;
 		else
 			sclk_rise_y <= 0;
-	end;
+	end
 	
 	reg sclk_fall_y;
 	always @(posedge clk_i) 
@@ -105,180 +113,149 @@ module spi_master (
 			sclk_fall_y <= 1;
 		else
 			sclk_fall_y <= 0;
-	end;
-//    /*=============================================================================================
-//    -- Sampling clock enable generation: depending on CPHA
+	end
+    /*=============================================================================================
+    -- Sampling clock enable generation: depending on CPHA
 //	 --=============================================================================================*/
 	wire samp_ce_y;
-	wire cpha_y;
+	wire shift_ce_y;
 	
-	assign cpha_y = reg_control_i[10];
+	assign samp_ce_y = (!cpha_y) ? sclk_rise_y : sclk_fall_y;
+	assign shift_ce_y = (!cpha_y) ? sclk_fall_y : sclk_rise_y;
 	
-	assign samp_ce_y = ((sclk_en_reg_y) & (state == TRANSFER)) ? ((!cpha_y) ? sclk_rise_y : sclk_fall_y) : 0;
+	reg sclk_delay_y;
+	reg clk_en_delay_y;
+	always @ (posedge clk_i,negedge reset_n_i)
+	begin
+		if(!reset_n_i)
+		begin
+			sclk_delay_y <= 0;
+			clk_en_delay_y = 0;
+		end
+		else
+		begin
+			sclk_delay_y <= sclk_y;
+			clk_en_delay_y <= clock_en_y;
+		end	
+	end
+		
+	reg spi_sclk_y;
+	reg ss_y;
+	always @ (posedge clk_i,negedge reset_n_i)
+	begin		
+		if(!reset_n_i)
+		begin
+			spi_sclk_y <= 0;
+			ss_y = 0;
+		end
+		else
+		begin
+			spi_sclk_y <= sclk_delay_y;
+			ss_y = clk_en_delay_y;
+		end
+	end
 	
-	/*=============================================================================================
-   -- REGISTERED INPUTS
-   --=============================================================================================*/
-   
-	 reg rx_bit_reg_y;
 	
-    always @(posedge clk_i)
-	 begin
-		rx_bit_reg_y <= spi_miso_i;
-	 end
-
-    /*=============================================================================================
-    --  REGISTER TRANSFER FSM
-    --=============================================================================================*/
-    // fsm state and data registers: synchronous to the spi base reference clock
-	
-	reg [31:0] tx_reg_y;
-	reg [31:0] rx_reg_y;
-	reg tx_pull_y; 
-	reg rx_push_y;
-//	reg spi_enable_y;
-	reg transfer_en_y;
-	reg transfer_done_y;
-	reg [5:0] num_of_transferred_bits_y;
-	
-	wire msb_first;
-	assign msb_first = reg_control_i[8];
+	localparam [1:0] 
+		IDLE  = 2'b00,
+		LOAD = 2'b01,
+		TRANSFER = 2'b10,
+		TRANSFER_DONE = 2'b11;
+		
 	reg [5:0] bits;
-	
-
 	always@(*)
 	begin
 		case(reg_trans_ctrl_i[6:5]) 
 			2'b00 : bits <= 8;
-			2'b01 : bits <= 16;
+			2'b01 : bits <= 16;	
 			2'b10 : bits <= 32;
 			default : bits <= 8;
 		endcase
-	end
-		
-	localparam [2:0]
-		IDLE = 3'd0,
-		LOAD = 3'd1, 
-		TRANSFER = 3'd2;
-	//	ERROR = 3'd3;
-		
-
-	reg [2:0]
-		state, next_state;
-	// FF registers clocked on rising edge and cleared on sync rst_i
-   always @(posedge clk_i, negedge reset_n_i)
-	begin
-		if (!reset_n_i)
-			state <= IDLE;
-      else
-			state <= next_state;
-	end
-
-	always @(posedge clk_i, negedge reset_n_i)
-    begin
-		if(!reset_n_i)
-			begin
-				tx_pull_y <= 0;
-				transfer_en_y <= 0;
-				num_of_transferred_bits_y <= 0;
-				transfer_done_y <= 0;
-				sclk_en_reg_y <= 0;
-				rx_push_y <= 0;
-				sclk_en_reg_y <= 0;
-				next_state <= IDLE;
-			end
-		else
-			case (state)
-				IDLE : 
-					begin
-						tx_pull_y <= 0;
-						transfer_en_y <= 0;
-						transfer_done_y <= 0;
-						sclk_en_reg_y <= 0;
-						rx_push_y <= 0;
-						if (trans_start_i & !tx_empty_i)
-						begin
-							tx_pull_y <= 1;
-							num_of_transferred_bits_y <= bits;
-							next_state <= LOAD;
-						end
-					end
-				LOAD : 
-					begin
-						tx_pull_y <= 0;
-						rx_push_y <= 0;
-						transfer_en_y <= 1;
-						next_state <= TRANSFER;
-					end
-				TRANSFER :
-					begin
-						rx_push_y <= 0;
-						tx_pull_y <= 0;
-						sclk_en_reg_y <= 1;
-						if(bit_counter==num_of_transferred_bits_y)
-						begin
-							sclk_en_reg_y <= 0;
-							if(tx_empty_i)
-							begin
-								transfer_done_y <= 1;
-								next_state <= IDLE;
-							end
-							else			
-							begin
-								tx_pull_y <= 1;
-								next_state <= LOAD;	
-								sclk_en_reg_y <= 0;
-							end
-							rx_push_y <= 1;
-						end
-					end
-					
-			endcase
 	end	
+		
+	reg [1:0] state;
+	reg tx_pull_y,rx_push_y;	
+	reg transfer_en_y;
+	reg trans_done_y;
+	reg [5:0] bit_counter_y;
+	reg [5:0] num_of_transferred_bits_y;
 	
-//    /*=============================================================================================
-//    -- Data shifting
-//    =============================================================================================*/		
+	/*seq*/
+	always @(posedge clk_i,negedge reset_n_i) 
+	begin
+		if (!reset_n_i) 
+		begin
+			state <= IDLE;
+			tx_pull_y <= 0;
+			trans_done_y <= 0;
+			transfer_en_y <= 0;
+			rx_push_y <= 0;
+			clock_en_y <= 0;
+			num_of_transferred_bits_y <= 0;
+		end
+		else
+			case(state)
+				IDLE :
+				begin
+					tx_pull_y <= 0;
+					trans_done_y <= 0;		
+					transfer_en_y <= 0;
+					rx_push_y <= 0;
+					clock_en_y <= 0;
+					if(trans_start_i)
+					begin
+						state <= LOAD;
+					end
+				end
+				LOAD :
+				begin
+					tx_pull_y <= 1;
+					rx_push_y <= 0;
+					trans_done_y <= 0;
+					transfer_en_y <= 1;
+					clock_en_y <= 1;
+					num_of_transferred_bits_y <= bits;
+					state <= TRANSFER;
+				end
+				TRANSFER : 
+				begin				
+					transfer_en_y <= 0;
+					tx_pull_y <= 0;
+					if(bit_counter_y == num_of_transferred_bits_y)
+							state <= TRANSFER_DONE;
+				end
+				TRANSFER_DONE : 
+				begin
+					clock_en_y <= 0;
+					rx_push_y <= 1;
+					if(!tx_empty_i)
+					begin
+						state <= LOAD;
+					end
+					else
+					begin
+						trans_done_y <= 1;
+						state <= IDLE;
+					end
+				end
+			endcase
+	end
 	
-	reg [31:0] shr;
-	reg [5:0] bit_counter;
-	
-//	always @(posedge clk_i)
-//   begin
-//		if(!reset_n_i)
-//		begin
-//			shr <= 0;
-//			bit_counter <= 0;
-//			mosi_y <= 0;
-//		end
-//		else if(tx_pull_y)
-//			begin
-//				shr <= tx_data_i;
-//				if(msb_first)
-//					mosi_y <= tx_data_i[31];
-//				else
-//					mosi_y <= tx_data_i[0];
-//				bit_counter <=0;
-//			end
-//		else if(transfer_en_y)
-//			begin
-//				if(samp_ce_y)
-//				begin
-//					if(msb_first)
-//					begin
-//						shr <= {shr[30:0],spi_miso_i};
-//						mosi_y <= shr[31];
-//					end
-//					else 
-//					begin
-//						shr <= {spi_miso_i,shr[31:1]};
-//						mosi_y <= shr[0];
-//					end
-//					bit_counter <= bit_counter+1;
-//				end
-//			end
-//	end
-	
+	always @(posedge clk_i,negedge reset_n_i) 
+	begin
+		if (!reset_n_i) // rising edge of SCLK
+			bit_counter_y <= 0;
+		else if(transfer_en_y || rx_push_y	)
+			bit_counter_y <= 0;
+		else if(state == TRANSFER && !cpha_y && shift_ce_y)
+			bit_counter_y = bit_counter_y+1 ;			
+		else if(state == TRANSFER && cpha_y && samp_ce_y)
+			bit_counter_y = bit_counter_y+1;		
+		else 
+			bit_counter_y = bit_counter_y;
+	end;
+
+
 	reg [7:0] fifo0,fifo1,fifo2,fifo3;
 	//reg [7:0] tx_fifo0,tx_fifo1,tx_fifo2,tx_fifo3;
 	//reg [7:0] rx_fifo0,rx_fifo1,rx_fifo2,rx_fifo3;
@@ -291,7 +268,6 @@ module spi_master (
 			fifo1 <= 0;
 			fifo2 <= 0;
 			fifo3 <= 0;	
-			bit_counter <= 0;
 		end
 		else if(tx_pull_y)
 		begin
@@ -299,9 +275,8 @@ module spi_master (
 			fifo1 <= tx_data_i[13:8];
 			fifo2 <= tx_data_i[23:14];
 			fifo3 <= tx_data_i[31:24];		
-			bit_counter <= 0;
 		end
-		else if(transfer_en_y)
+		else if(ss_y)
 			begin
 				if(samp_ce_y)
 				begin
@@ -310,46 +285,46 @@ module spi_master (
 						fifo0 <= {fifo1[0],fifo0[7:1]};
 						fifo1 <= {fifo2[0],fifo1[7:1]};
 						fifo2 <= {fifo3[0],fifo2[7:1]};
-						fifo3 <= {rx_bit_reg_y,fifo3[7:1]};
+						fifo3 <= {spi_miso_i,fifo3[7:1]};
 					end
 					else
 					begin
-						fifo0 <= {fifo0[6:0],rx_bit_reg_y};
+						fifo0 <= {fifo0[6:0],spi_miso_i};
 						fifo1 <= {fifo0[6:0],fifo0[7]};
 						fifo2 <= {fifo0[6:0],fifo1[7]};
 						fifo3 <= {fifo0[6:0],fifo2[7]};
 					end
-					bit_counter <= bit_counter + 1;
 				end
 			end
 	end
 	
-	
-	
+		
 //    /*=============================================================================================
 //    -- mosi generation
 //    =============================================================================================*/		
 
+	/*if cpha = 0 put first bit to mosi line when turns chipselect active*/
+	wire en = (!cpha_y && !ss_y && clk_en_delay_y);
+	
 	reg mosi_y;
 	reg [31:0] rx_data_y;
-	always@(posedge clk_i)
+	always@(posedge clk_i,negedge reset_n_i)
 	begin
-		if(transfer_en_y)
-		begin
-			if(samp_ce_y)
+		if(!reset_n_i || !ss_y)
+			mosi_y <= 1'b0;
+		else if(shift_ce_y || (en))
+			begin
+				if(!msb_first)
+					mosi_y <= fifo0[0];
+				else
 				begin
-					if(!msb_first)
-						mosi_y <= fifo0[0];
-					else
-					begin
-						case(num_of_transferred_bits_y)
-							 6'd8		:	mosi_y <= fifo0[7];
-							 6'd16	:	mosi_y <= fifo1[7];
-							 6'd32	:	mosi_y <= fifo3[7];
-						endcase
-					end
+					case(num_of_transferred_bits_y)
+						 6'd8		:	mosi_y <= fifo0[7];
+						 6'd16	:	mosi_y <= fifo1[7];
+						 6'd32	:	mosi_y <= fifo3[7];
+					endcase
 				end
-		end
+			end
 	end
 	
 	always@(*)
@@ -367,22 +342,21 @@ module spi_master (
 			rx_data_y <= {fifo3,fifo2,fifo1,fifo0};
 		end
 	end
-	
-	
+
+
 //    /*=============================================================================================
 //    -- SCK out logic: pipeline phase compensation for the SCK line
 //    =============================================================================================*/	
-//
 
 	wire [3:0] ss_n = reg_trans_ctrl_i[3:0];
 
 	assign tx_pull_o = tx_pull_y;
-	assign trans_done_o = transfer_done_y;
+	assign trans_done_o = trans_done_y;
 	assign rx_data_o = rx_data_y;
 	assign rx_push_o = rx_push_y;		
-	assign spi_ssel_o = (sclk_en_reg_y) ? ~(ss_n) : 4'hF; //bitwise
-	assign spi_sck_o = (!cpol_y) ? sclk_y : ~sclk_y;
-	assign spi_mosi_o = (sclk_en_reg_y) ? mosi_y : 1'bz;
+	assign spi_ssel_o = (ss_y) ? ~(ss_y) : 4'hF; //bitwise
+	assign spi_sck_o = (cpol_y) ? ~spi_sclk_y : spi_sclk_y;
+	assign spi_mosi_o = (ss_y) ? mosi_y : 1'bz;
 
 
 endmodule
