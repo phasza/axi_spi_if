@@ -22,7 +22,7 @@
 // 
 ////////////////////////////////////////////////////////////////////////////////
 
-module axi_spi_test_transfer;
+module axi_spi_transfer_test;
 
 	// Inputs
 	reg clk_i;
@@ -115,7 +115,7 @@ module axi_spi_test_transfer;
 		 // ===========================================
 		 // WRITE CONTROL REGISTER
 		 // ===========================================
-		 wdata_i = 32'h0000_0002;
+		 wdata_i = 32'h0000_0102;
 		 awaddr_i = 0;
 		 awvalid_i = 1;
 		 wvalid_i = 1;
@@ -132,8 +132,7 @@ module axi_spi_test_transfer;
 		 // ===========================================
 		 
 		 for (i=0; i < 8; i = i + 1) begin
-	//		wdata_i = 32'h1000_0000 + i;
-			wdata_i = 32'h0000_0000 + i;
+			wdata_i = 32'd1 + i;
 			awaddr_i = 3;
 			awvalid_i = 1;
 			wvalid_i = 1;
@@ -186,12 +185,12 @@ module axi_spi_test_transfer;
 		 
 			#100;
 		end
-		
+
+		#500; 
 		 // ===========================================
 		 // READ RX FIFO
 		 // ===========================================
 		 
-		 #100;
 		 for (i=0; i < 8; i = i + 1) begin
 			araddr_i = 3;
 			arvalid_i = 1;
@@ -200,13 +199,11 @@ module axi_spi_test_transfer;
 			@(posedge clk_i) #1;
 			arvalid_i = 0;
 			
-			#30;
+			#100;
 		end
-
-
 	end
 	
-		//always #77 spi_miso_i = ~spi_miso_i;	
+		always #77 spi_miso_i = ~spi_miso_i;	
 	
 		always #5 clk_i = ~clk_i;
       

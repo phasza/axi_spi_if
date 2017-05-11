@@ -130,7 +130,7 @@ module spi_master (
 		if(!reset_n_i)
 		begin
 			sclk_delay_y <= 0;
-			slave_select_en_delay_y = 0;
+			slave_select_en_delay_y <= 0;
 		end
 		else
 		begin
@@ -251,11 +251,11 @@ module spi_master (
 		else if(transfer_en_y || rx_push_y	)
 			bit_counter_y <= 0;
 		else if(state == TRANSFER && !cpha_y && shift_ce_y)
-			bit_counter_y = bit_counter_y+1 ;			
+			bit_counter_y <= bit_counter_y+1 ;			
 		else if(state == TRANSFER && cpha_y && samp_ce_y)
-			bit_counter_y = bit_counter_y+1;		
+			bit_counter_y <= bit_counter_y+1;		
 		else 
-			bit_counter_y = bit_counter_y;
+			bit_counter_y <= bit_counter_y;
 	end;
 
 
@@ -277,7 +277,7 @@ module spi_master (
 			fifo0 <= tx_data_i[7:0];
 			fifo1 <= tx_data_i[15:8];
 			fifo2 <= tx_data_i[23:16];
-			fifo3 <= tx_data_i[31:24];		
+			fifo3 <= tx_data_i[31:24];	
 		end
 		else if(ss_y)
 			begin
@@ -293,9 +293,9 @@ module spi_master (
 					else
 					begin
 						fifo0 <= {fifo0[6:0],spi_miso_i};
-						fifo1 <= {fifo0[6:0],fifo0[7]};
-						fifo2 <= {fifo0[6:0],fifo1[7]};
-						fifo3 <= {fifo0[6:0],fifo2[7]};
+						fifo1 <= {fifo1[6:0],fifo0[7]};
+						fifo2 <= {fifo2[6:0],fifo1[7]};
+						fifo3 <= {fifo3[6:0],fifo2[7]};
 					end
 				end
 			end
@@ -352,6 +352,7 @@ module spi_master (
 			end
 	end
 	
+	initial rx_data_y = 0;
 	always@(*)
 	begin
 		if(!msb_first)
@@ -364,10 +365,22 @@ module spi_master (
 		end
 		else
 		begin
-			rx_data_y <= {fifo3,fifo2,fifo1,fifo0};
+			case(num_of_transferred_bits_y)
+				 6'd8		: 	rx_data_y <= {24'd0,fifo0};
+				 6'd16	:	rx_data_y <= {16'd0,fifo1,fifo0};
+				 6'd32	:  rx_data_y <= {fifo3,fifo2,fifo1,fifo0};
+			endcase
 		end
 	end
 
+	reg [31:0] rx_data;
+	always@(posedge clk_i,negedge reset_n_i)
+	begin
+		if(!reset_n_i)
+			rx_data <= 0;
+		else 
+			rx_data <= rx_data_y;
+	end
 
 //    /*=============================================================================================
 //    -- SCK out logic: pipeline phase compensation for the SCK line
@@ -377,7 +390,7 @@ module spi_master (
 
 	assign tx_pull_o = tx_pull_y;
 	assign trans_done_o = trans_done_y;
-	assign rx_data_o = rx_data_y;
+	assign rx_data_o = rx_data;
 	assign rx_push_o = rx_push_y;		
 	assign spi_ssel_o = (ss_y) ? ~(ss_y) : 4'hF; //bitwise
 	assign spi_sck_o = (cpol_y) ? ~spi_sclk_y : spi_sclk_y;

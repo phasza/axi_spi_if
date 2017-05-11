@@ -119,11 +119,7 @@ module fifo2spi (
 	reg [2:0]
 		request_state;
 		
-	always @ (posedge clk_i or negedge reset_n_i)
-	begin
-		if (!reset_n_i)
-			request_state <= IDLE;
-		else
+	always @ (posedge clk_i)
 		begin
 			case (request_state)
 				IDLE :
@@ -154,7 +150,7 @@ module fifo2spi (
 								end
 							// Transfer Control Register write
 							1:
-								begin
+								begin	
 									reg_data_y <= wr_data_data_i[35:4];
 									reg_load_y <= 1;
 									reg_sel_y <= wr_req_data_i;
@@ -223,6 +219,7 @@ module fifo2spi (
 					begin
 						wr_req_pull_y <= 0;
 						wr_data_pull_y <= 0;
+						tx_push_y <= 0; 
 						if (!wr_resp_full_i)
 						begin
 							wr_resp_push_y <= 1; 
@@ -230,6 +227,7 @@ module fifo2spi (
 					end
 				WAIT_SEND_RD_RESP :
 					begin
+						rx_pull_y <= 0;						
 						rd_req_pull_y <= 0;
 						if (!rd_resp_full_i)
 						begin
@@ -245,10 +243,8 @@ module fifo2spi (
 						rd_resp_push_y <= 0;
 						reg_load_y <= 0;
 						tx_push_y <= 0;
-						request_state <= IDLE;
 					end
 			endcase;
-		end;
 	end
 	
 	always @ (posedge clk_i or negedge reset_n_i)

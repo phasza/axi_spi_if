@@ -36,10 +36,18 @@ module fifo(
 	--  Locals
 	--=============================================================================================*/
 	reg     [g_width-1:0]		mem[0:g_depth-1];
-	reg     [c_ptr_width:0]   	wr_ptr, rd_ptr;
-	wire    [c_ptr_width:0]   	wr_ptr_next, rd_ptr_next;
+	reg     [c_ptr_width-1:0]   	wr_ptr, rd_ptr;
+	wire    [c_ptr_width-1:0]   	wr_ptr_next, rd_ptr_next;
 	reg							gb;
 
+	integer k;
+	initial 	
+	begin 
+		for (k = 0; k < g_depth ; k = k + 1) 
+		begin 
+			mem[k] = 32'h0000_0000; 
+		end 
+	end
 	/*=============================================================================================
 	--  Pointer settting
 	--=============================================================================================*/
@@ -72,5 +80,6 @@ module fifo(
 		if(!rst_i)											gb <= 0;
 		else if((wr_ptr_next == rd_ptr) & push_i)	gb <= 1;
 		else if(pull_i)					    			gb <= 0;
-
+		
+	
 endmodule
