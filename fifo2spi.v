@@ -75,7 +75,8 @@ module fifo2spi (
 );
 
 	reg 			spi_busy_y;
-
+	reg			wait_wr_resp_y;
+	reg			wait_rd_resp_y;
 	reg [31:0] 	reg_data_y;
 	reg 			reg_load_y;
 	reg [1:0] 	reg_sel_y;
@@ -104,6 +105,16 @@ module fifo2spi (
 	
 	reg [2:0]
 		request_state;
+		
+	// Set current state to next state every CLK rise
+//	always @ (posedge clk_i or negedge reset_n_i)
+//	begin
+//		if (!reset_n_i)
+//			request_state <= IDLE;
+//		else
+//			request_state <= request_state_next;
+//	end	
+		
 	always @ (posedge clk_i or negedge reset_n_i)
 	begin
 		if (!reset_n_i)
@@ -121,128 +132,110 @@ module fifo2spi (
 						reg_load_y <= 0;
 						tx_push_y <= 0;
 						rx_pull_y <= 0;
-						if (!wr_req_empty_i & !wr_data_empty_i & !spi_busy_y)
-							request_state <= START_WRITE;
-						else if (!rd_req_empty_i & !spi_busy_y)
-							request_state <= START_READ;
+						wait_wr_resp_y <= 0;
+						wait_rd_resp_y <= 0;
 					end
 			
 				START_WRITE :
 					begin
 						wr_req_pull_y <= 1;
 						wr_data_pull_y <= 1;
+						wait_wr_resp_y <= 1;
 						
-						if (wr_req_data_i < 2'd2)			// WRITE registers
-						begin
-							reg_data_y <= wr_data_data_i[35:4];				// TODO Use strobes
-							reg_load_y <= 1;
-							reg_sel_y <= wr_req_data_i;
-							wr_resp_data_y <= 0;
-							if (!wr_resp_full_i)
-							begin
-								wr_resp_push_y <= 1; 
-								request_state <= IDLE;
-							end
-							else
-							begin
-								request_state <= WAIT_SEND_WR_RESP;
-							end
-						end
-						else if (wr_req_data_i == 2'd2)		// ACCESS ERROR
-						begin
-							wr_resp_data_y <= 2'd2;
-							if (!wr_resp_full_i)
-							begin
-								wr_resp_push_y <= 1; 
-								request_state <= IDLE;
-							end
-							else
-							begin
-								request_state <= WAIT_SEND_WR_RESP;
-							end
-						end
-						else								// TX FIFO WRITE
-						begin
-							tx_data_y <= wr_data_data_i[35:4]; 				// TODO Use strobes, assign somewhere else
-							if (!tx_full_i)
-							begin
-								tx_push_y <= 1; 
-								request_state <= IDLE;
-							end
-							else
-							begin
-								wr_resp_data_y <= 2'd2;			// TODO Write Error register
-								if (!wr_resp_full_i)
+						case (wr_req_data_i)
+							// Control Register write
+							0:	
 								begin
-									wr_resp_push_y <= 1; 
-									request_state <= IDLE;
+									reg_data_y <= wr_data_data_i[35:4];
+									reg_load_y <= 1;
+									reg_sel_y <= wr_req_data_i;
+									wr_resp_data_y <= 0;
 								end
-								else
+							// Transfer Control Register write
+							1:
 								begin
-									request_state <= WAIT_SEND_WR_RESP;
+									reg_data_y <= wr_data_data_i[35:4];
+									reg_load_y <= 1;
+									reg_sel_y <= wr_req_data_i;
+									wr_resp_data_y <= 0;
 								end
-							end
-						end					
+							//2: Status Register write -> Access Error
+							// TX FIFO Write
+							3:
+								begin
+									tx_data_y <= wr_data_data_i[35:4]; 				// TODO Use strobes, assign somewhere else
+									if (!tx_full_i)
+									begin
+										tx_push_y <= 1; 
+										wr_resp_data_y <= 0;
+									end
+									else
+										wr_resp_data_y <= 2'd2;
+								end
+							// Access Error
+							default:
+								begin
+									wr_resp_data_y <= 2'd2;
+								end
+						endcase				
 					end
+					
 				START_READ :
 					begin
 						rd_req_pull_y <= 1;
-						if (rd_req_data_i < 2'd3)			// READ registers
-						begin
-							rd_resp_data_y[1:0] <= 0; 
-							case (rd_req_data_i[1:0])
-								2'd0 : rd_resp_data_y[33:2] <= reg_control_i;
-								2'd1 : rd_resp_data_y[33:2] <= reg_trans_ctrl_i;
-								2'd2 : rd_resp_data_y[33:2] <= reg_status_i;
-								default : rd_resp_data_y[33:2] <= 32'bx;
-							endcase
-							
-							if (!rd_resp_full_i)
-							begin
-								rd_resp_push_y <= 1; 
-								request_state <= IDLE;
-							end
-							else
-							begin
-								request_state <= WAIT_SEND_RD_RESP;
-							end
-						end
-						else								// RX FIFO READ
-						begin							
-							if (!rx_empty_i)
-							begin
-								rd_resp_data_y <= {rx_data_i, 2'd0 };
-								rx_pull_y <= 1; 
-							end
-							else
-							begin
-								rd_resp_data_y <= {32'hFFFF_FFFF, 2'd2 };
-							end
-							if (!rd_resp_full_i)
-							begin
-								rd_resp_push_y <= 1; 
-								request_state <= IDLE;
-							end
-							else
-							begin
-								request_state <= WAIT_SEND_RD_RESP;
-							end
-						end			
+						wait_rd_resp_y <= 1;
+						
+						case (rd_req_data_i)
+							// Control Register read
+							0:	
+								begin
+									rd_resp_data_y <= {reg_control_i, 2'b00};
+								end
+							// Transfer Control Register read
+							1:
+								begin
+									rd_resp_data_y <= {reg_trans_ctrl_i, 2'b00};
+								end
+							// Status Register read
+							2: 
+								begin
+									rd_resp_data_y <= {reg_status_i, 2'b00};
+								end
+							// RX FIFO read
+							3:
+								begin
+									if (!rx_empty_i)
+									begin
+										rd_resp_data_y <= {rx_data_i, 2'd0 };
+										rx_pull_y <= 1; 
+									end
+									else
+										rd_resp_data_y <= {32'hFFFF_FFFF, 2'd2 };
+								end
+							// Access Error
+							default:
+								begin
+									rd_resp_data_y <= {32'hFFFF_FFFF, 2'b10};
+								end
+						endcase					
 					end
 				WAIT_SEND_WR_RESP :
 					begin
+						wr_req_pull_y <= 0;
+						wr_data_pull_y <= 0;
 						if (!wr_resp_full_i)
 						begin
 							wr_resp_push_y <= 1; 
-							request_state <= IDLE;
+							wait_wr_resp_y <= 0;
 						end
 					end
 				WAIT_SEND_RD_RESP :
 					begin
+						rd_req_pull_y <= 0;
 						if (!rd_resp_full_i)
 						begin
 							rd_resp_push_y <= 1; 
-							request_state <= IDLE;
+							wait_rd_resp_y <= 0;
 						end
 					end
 				default :	// Should never go into default state, but if does, go to a safe place
@@ -254,10 +247,67 @@ module fifo2spi (
 						rd_resp_push_y <= 0;
 						reg_load_y <= 0;
 						tx_push_y <= 0;
+						wait_wr_resp_y <= 0;
+						wait_rd_resp_y <= 0;
 						request_state <= IDLE;
 					end
 			endcase;
 		end;
+	end
+	
+	always @ (posedge clk_i or negedge reset_n_i)
+	begin
+		if (!reset_n_i)
+			request_state <= IDLE;
+		else
+		begin
+			case (request_state)
+				IDLE :
+					begin
+						if (!wr_req_empty_i & !wr_data_empty_i)
+							request_state <= START_WRITE;
+						else if (!rd_req_empty_i)
+							request_state <= START_READ;
+						else
+							request_state <= IDLE;
+					end
+				START_WRITE :
+					begin
+						request_state <= WAIT_SEND_WR_RESP;
+					end
+				START_READ :
+					begin
+						request_state <= WAIT_SEND_RD_RESP;
+					end
+				WAIT_SEND_WR_RESP :
+					begin
+						if (!wr_resp_full_i)
+							request_state <= IDLE;
+					end
+				WAIT_SEND_RD_RESP :
+					begin
+						if (!rd_resp_full_i)
+							request_state <= IDLE;
+					end
+				default :
+					begin
+						request_state <= IDLE;
+					end
+			endcase
+//			if (!(wait_wr_resp_y | wait_wr_resp_y))
+//				if (!wr_req_empty_i & !wr_data_empty_i)
+//					request_state <= START_WRITE;
+//				else if (!rd_req_empty_i)
+//					request_state <= START_READ;
+//				else
+//					request_state <= IDLE;
+//		   else if (wait_wr_resp_y)
+//				request_state <= WAIT_SEND_WR_RESP;
+//			else if (wait_rd_resp_y)
+//				request_state <= WAIT_SEND_RD_RESP;
+//			else
+//				request_state <= IDLE;	
+		end
 	end
 	
 	reg prev_spi_start_y;

@@ -52,12 +52,13 @@ module regs_mod (
 	begin
 		if (!reset_n_i)
 		begin
-			axi_spi_ctrl_reg <= 1;
+			axi_spi_ctrl_reg <= 32'd1;
 		end
 		else
 			if (reg_load_i & (reg_sel_i == 2'b0))
 			begin
-				axi_spi_ctrl_reg <= reg_data_i[10:0];
+				axi_spi_ctrl_reg[10:8] <= reg_data_i[10:8];
+				axi_spi_ctrl_reg[3:0] <= reg_data_i[3:0];
 			end
 	end;
 	
@@ -95,7 +96,9 @@ module regs_mod (
 			end
 			else if (reg_load_i & (reg_sel_i == 2'b1))
 			begin
-				trans_ctrl_reg <= reg_data_i[13:0];
+				trans_ctrl_reg[3:0] <= reg_data_i[3:0];
+				trans_ctrl_reg[6:5] <= reg_data_i[6:5];
+				trans_ctrl_reg[13:13] <= reg_data_i[13:13];
 			end
 	end;
 	

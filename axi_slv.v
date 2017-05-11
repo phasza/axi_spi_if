@@ -98,16 +98,10 @@ module axi4_lite_slv #(
 	reg 	awready_y;
 	reg	wr_req_push_y;
 	
-	reg [1:0] wr_req_state, wr_req_state_next;
+	initial awready_y = 1;
+	initial wr_req_push_y = 0;
 	
-	// Set current state to next state every CLK rise
-	always @ (posedge aclk_i or negedge areset_n_i)
-	begin
-		if (!areset_n_i)
-			wr_req_state <= IDLE;
-		else
-			wr_req_state <= wr_req_state_next;
-	end
+	reg [1:0] wr_req_state;
 	
 	// Main WR REQ FSM block
 	always @ (posedge aclk_i)
@@ -155,15 +149,31 @@ module axi4_lite_slv #(
 	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
-			wr_req_state_next <= IDLE;
+			wr_req_state <= IDLE;
 		else
 		begin
-			if (awvalid_i & (!wr_req_full_i))			// If next reqest valid, and WR fifo isn't full
-				wr_req_state_next <= STORE_REQ;
-			else if (awvalid_i & wr_req_full_i)		   // If next reqest valid but WR fifo is full
-				wr_req_state_next <= #1 WAIT_READY;
-			else													// Else
-				wr_req_state_next <= #1 IDLE;	
+			case (wr_req_state)
+				IDLE :
+					begin
+						if (awvalid_i & (!wr_req_full_i))
+							wr_req_state <= STORE_REQ;
+						else if (awvalid_i & wr_req_full_i)
+							wr_req_state <= WAIT_READY;
+						else
+							wr_req_state <= IDLE;
+					end
+				STORE_REQ :
+					begin
+						wr_req_state <= IDLE;
+					end
+				WAIT_READY :
+					begin
+						if (awvalid_i & (!wr_req_full_i))
+							wr_req_state <= STORE_REQ;
+						else
+							wr_req_state <= WAIT_READY;
+					end
+			endcase
 		end
 	end
 	
@@ -177,18 +187,13 @@ module axi4_lite_slv #(
     --=============================================================================================*/
 	reg 	wready_y;
 	reg	wr_data_push_y;
-	reg [2:0]
-		wr_data_state, wr_data_state_next;
 	
-	// Drive state into next state
-	always @ (posedge aclk_i or negedge areset_n_i)
-	begin
-		if (!areset_n_i)
-			wr_data_state <= IDLE;
-		else
-			wr_data_state <= wr_data_state_next;
-	end
+	initial wready_y = 1;
+	initial wr_data_push_y = 0;
 	
+	reg [1:0]
+		wr_data_state;
+
 	// Main FSM block
 	always @ (posedge aclk_i)
 	begin
@@ -230,19 +235,36 @@ module axi4_lite_slv #(
 				end
 		endcase;
 	end
-		
+
+	// Next state selector
 	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
-			wr_data_state_next <= IDLE;
+			wr_data_state <= IDLE;
 		else
 		begin
-			if (wvalid_i & (!wr_data_full_i))			// If data is valid and FIFO is not full
-				wr_data_state_next <= STORE_REQ;
-			else if (wvalid_i & wr_data_full_i)			// If data is valid but FIFO is not full
-				wr_data_state_next <= WAIT_READY;
-			else													// Else
-				wr_data_state_next <= IDLE;	
+			case (wr_data_state)
+				IDLE :
+					begin
+						if (wvalid_i & (!wr_data_full_i))
+							wr_data_state <= STORE_REQ;
+						else if (wvalid_i & wr_data_full_i)
+							wr_data_state <= WAIT_READY;
+						else
+							wr_data_state <= IDLE;
+					end
+				STORE_REQ :
+					begin
+						wr_data_state <= IDLE;
+					end
+				WAIT_READY :
+					begin
+						if (wvalid_i & (!wr_data_full_i))
+							wr_data_state <= STORE_REQ;
+						else
+							wr_data_state <= WAIT_READY;
+					end
+			endcase
 		end
 	end
 	
@@ -256,17 +278,12 @@ module axi4_lite_slv #(
     --=============================================================================================*/
 	reg 	bvalid_y;
 	reg	wr_resp_pull_y;
-	reg [2:0]
-		wr_resp_state, wr_resp_state_next;
 	
-	// Drive state into next state
-	always @ (posedge aclk_i or negedge areset_n_i)
-	begin
-		if (!areset_n_i)
-			wr_resp_state <= IDLE;
-		else
-			wr_resp_state <= wr_resp_state_next;
-	end
+	initial bvalid_y = 0;
+	initial wr_resp_pull_y = 0;
+	
+	reg [1:0]
+		wr_resp_state;
 	
 	// Main FSM block
 	always @ (posedge aclk_i)
@@ -289,7 +306,11 @@ module axi4_lite_slv #(
 					bvalid_y <= 1;
 					wr_resp_pull_y <= 1;
 				end
-				
+			WAIT_READY :
+				begin
+					bvalid_y <= 0;
+					wr_resp_pull_y <= 0;
+				end	
 			// When default:
 			//		Should never go into this state, it's only for full_case synthesis
 			//		but if it does, keep everything LOW
@@ -304,13 +325,26 @@ module axi4_lite_slv #(
 	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
-			wr_resp_state_next <= IDLE;
+			wr_resp_state <= IDLE;
 		else
 		begin
-			if (bready_i & (!wr_resp_empty_i))			// If Master is ready to accept data and there is a response in the FIFO
-				wr_resp_state_next <= SEND_RESP;
-			else
-				wr_resp_state_next <= IDLE;	
+			case (wr_resp_state)
+				IDLE :
+					begin
+						if (bready_i & (!wr_resp_empty_i))
+							wr_resp_state <= SEND_RESP;
+						else
+							wr_resp_state <= IDLE;
+					end
+				SEND_RESP :
+					begin
+						wr_resp_state <= WAIT_READY;
+					end
+				WAIT_READY :
+					begin
+						wr_resp_state <= IDLE;
+					end
+			endcase;
 		end
 	end
 	
@@ -325,16 +359,12 @@ module axi4_lite_slv #(
 	// Basically the same as the WRITE FSMs
 	reg 	arready_y;
 	reg	rd_req_push_y;
-	reg [2:0]
-		rd_req_state, rd_req_state_next;
 	
-	always @ (posedge aclk_i or negedge areset_n_i)
-	begin
-		if (!areset_n_i)
-			rd_req_state <= IDLE;
-		else
-			rd_req_state <= rd_req_state_next;
-	end
+	initial arready_y = 1;
+	initial rd_req_push_y = 0;
+	
+	reg [1:0]
+		rd_req_state;
 	
 	always @ (posedge aclk_i)
 	begin
@@ -362,19 +392,36 @@ module axi4_lite_slv #(
 				end
 		endcase;
 	end
-		
+	
+		// Next state selector
 	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
-			rd_req_state_next <= IDLE;
+			rd_req_state <= IDLE;
 		else
 		begin
-			if (arvalid_i & (!rd_req_full_i))
-				rd_req_state_next <= STORE_REQ;
-			else if (arvalid_i & rd_req_full_i)
-				rd_req_state_next <= WAIT_READY;
-			else
-				rd_req_state_next <= IDLE;	
+			case (rd_req_state)
+				IDLE :
+					begin
+						if (arvalid_i & (!rd_req_full_i))
+							rd_req_state <= STORE_REQ;
+						else if (arvalid_i & rd_req_full_i)
+							rd_req_state <= WAIT_READY;
+						else
+							rd_req_state <= IDLE;
+					end
+				STORE_REQ :
+					begin
+						rd_req_state <= IDLE;
+					end
+				WAIT_READY :
+					begin
+						if (arvalid_i & (!rd_req_full_i))
+							rd_req_state <= STORE_REQ;
+						else
+							rd_req_state <= WAIT_READY;
+					end
+			endcase
 		end
 	end	
 	
@@ -387,16 +434,12 @@ module axi4_lite_slv #(
     --=============================================================================================*/
 	reg 	rvalid_y;
 	reg	rd_resp_pull_y;
-	reg [2:0]
-		rd_resp_state, rd_resp_state_next;
 	
-	always @ (posedge aclk_i or negedge areset_n_i)
-	begin
-		if (!areset_n_i)
-			rd_resp_state <= IDLE;
-		else
-			rd_resp_state <= rd_resp_state_next;
-	end
+	initial rvalid_y = 0;
+	initial rd_resp_pull_y = 0;
+	
+	reg [1:0]
+		rd_resp_state;
 	
 	always @ (posedge aclk_i)
 	begin
@@ -412,6 +455,11 @@ module axi4_lite_slv #(
 					rvalid_y <= 1;
 					rd_resp_pull_y <= 1;
 				end
+			WAIT_READY :
+				begin
+					rvalid_y <= 0;
+					rd_resp_pull_y <= 0;
+				end
 			default :	// Should never go into default state
 				begin
 					rvalid_y <= 0;
@@ -423,13 +471,26 @@ module axi4_lite_slv #(
 	always @ (posedge aclk_i or negedge areset_n_i)
 	begin
 		if (!areset_n_i)
-			rd_resp_state_next <= IDLE;
+			rd_resp_state <= IDLE;
 		else
 		begin
-			if (rready_i & (!rd_resp_empty_i))
-				rd_resp_state_next <= SEND_RESP;
-			else
-				rd_resp_state_next <= IDLE;	
+			case (rd_resp_state)
+				IDLE :
+					begin
+						if (rready_i & (!rd_resp_empty_i))
+							rd_resp_state <= SEND_RESP;
+						else
+							rd_resp_state <= IDLE;
+					end
+				SEND_RESP :
+					begin
+						rd_resp_state <= WAIT_READY;
+					end
+				WAIT_READY :
+					begin
+						rd_resp_state <= IDLE;
+					end
+			endcase;
 		end
 	end
 	
