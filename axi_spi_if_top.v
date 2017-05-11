@@ -170,7 +170,7 @@ module axi_spi_if #(
 	/*=============================================================================================
     --  FIFO Instantiations
     --=============================================================================================*/
-	fifo #(2, 1) wr_req_fifo(
+	fifo1 #(2) wr_req_fifo(
 		.clk_i(clk_i), 
 		.rst_i(reset_n_i), 	
 		.data_i(wr_req_pushdata_y), 	
@@ -181,7 +181,7 @@ module axi_spi_if #(
 		.empty_o(wr_req_empty_y)
 		);
 		
-	fifo #(36, 1) wr_data_fifo(
+	fifo1 #(36) wr_data_fifo(
 		.clk_i(clk_i), 
 		.rst_i(reset_n_i), 	
 		.data_i(wr_data_pushdata_y), 	
@@ -192,7 +192,7 @@ module axi_spi_if #(
 		.empty_o(wr_data_empty_y)
 		);
 	
-	fifo #(2, 1) wr_resp_fifo(
+	fifo1 #(2) wr_resp_fifo(
 		.clk_i(clk_i), 
 		.rst_i(reset_n_i), 	
 		.data_i(wr_resp_pushdata_y), 	
@@ -203,7 +203,7 @@ module axi_spi_if #(
 		.empty_o(wr_resp_empty_y)
 		);
 	
-	fifo #(2, 1) rd_req_fifo(
+	fifo1 #(2) rd_req_fifo(
 		.clk_i(clk_i), 
 		.rst_i(reset_n_i), 	
 		.data_i(rd_req_pushdata_y), 	
@@ -214,7 +214,7 @@ module axi_spi_if #(
 		.empty_o(rd_req_empty_y)
 		);
 	
-	fifo #(34, 1) rd_resp_fifo(
+	fifo1 #(34) rd_resp_fifo(
 		.clk_i(clk_i), 
 		.rst_i(reset_n_i), 	
 		.data_i(rd_resp_pushdata_y), 	

@@ -92,7 +92,7 @@ module regs_mod (
 		else
 			if (trans_start_i)
 			begin
-				trans_ctrl_reg <= trans_ctrl_reg & 14'b01_1111_1111_1111;
+				trans_ctrl_reg <= trans_ctrl_reg &14'b01_1111_1111_1111;
 			end
 			else if (reg_load_i & (reg_sel_i == 2'b1))
 			begin

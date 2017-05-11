@@ -75,8 +75,6 @@ module fifo2spi (
 );
 
 	reg 			spi_busy_y;
-	reg			wait_wr_resp_y;
-	reg			wait_rd_resp_y;
 	reg [31:0] 	reg_data_y;
 	reg 			reg_load_y;
 	reg [1:0] 	reg_sel_y;
@@ -92,6 +90,21 @@ module fifo2spi (
 	reg 			tx_push_y;
 	reg			rx_pull_y;
 	
+	initial spi_busy_y = 0;
+	initial reg_data_y = 0;
+	initial reg_load_y = 0;
+	initial reg_sel_y = 0;
+
+	initial wr_req_pull_y = 0;
+	initial wr_data_pull_y = 0;
+	initial wr_resp_data_y = 0;
+	initial wr_resp_push_y = 0;
+	initial rd_req_pull_y = 0;
+	initial rd_resp_push_y = 0;
+	initial rd_resp_data_y = 0;
+	initial tx_data_y = 0;
+	initial tx_push_y = 0;
+	initial rx_pull_y = 0;
 	
 	/*=============================================================================================
     --  Request Decoder FSM
@@ -105,15 +118,6 @@ module fifo2spi (
 	
 	reg [2:0]
 		request_state;
-		
-	// Set current state to next state every CLK rise
-//	always @ (posedge clk_i or negedge reset_n_i)
-//	begin
-//		if (!reset_n_i)
-//			request_state <= IDLE;
-//		else
-//			request_state <= request_state_next;
-//	end	
 		
 	always @ (posedge clk_i or negedge reset_n_i)
 	begin
@@ -132,15 +136,12 @@ module fifo2spi (
 						reg_load_y <= 0;
 						tx_push_y <= 0;
 						rx_pull_y <= 0;
-						wait_wr_resp_y <= 0;
-						wait_rd_resp_y <= 0;
 					end
 			
 				START_WRITE :
 					begin
 						wr_req_pull_y <= 1;
 						wr_data_pull_y <= 1;
-						wait_wr_resp_y <= 1;
 						
 						case (wr_req_data_i)
 							// Control Register write
@@ -183,7 +184,6 @@ module fifo2spi (
 				START_READ :
 					begin
 						rd_req_pull_y <= 1;
-						wait_rd_resp_y <= 1;
 						
 						case (rd_req_data_i)
 							// Control Register read
@@ -226,7 +226,6 @@ module fifo2spi (
 						if (!wr_resp_full_i)
 						begin
 							wr_resp_push_y <= 1; 
-							wait_wr_resp_y <= 0;
 						end
 					end
 				WAIT_SEND_RD_RESP :
@@ -235,7 +234,6 @@ module fifo2spi (
 						if (!rd_resp_full_i)
 						begin
 							rd_resp_push_y <= 1; 
-							wait_rd_resp_y <= 0;
 						end
 					end
 				default :	// Should never go into default state, but if does, go to a safe place
@@ -247,8 +245,6 @@ module fifo2spi (
 						rd_resp_push_y <= 0;
 						reg_load_y <= 0;
 						tx_push_y <= 0;
-						wait_wr_resp_y <= 0;
-						wait_rd_resp_y <= 0;
 						request_state <= IDLE;
 					end
 			endcase;
@@ -293,20 +289,7 @@ module fifo2spi (
 					begin
 						request_state <= IDLE;
 					end
-			endcase
-//			if (!(wait_wr_resp_y | wait_wr_resp_y))
-//				if (!wr_req_empty_i & !wr_data_empty_i)
-//					request_state <= START_WRITE;
-//				else if (!rd_req_empty_i)
-//					request_state <= START_READ;
-//				else
-//					request_state <= IDLE;
-//		   else if (wait_wr_resp_y)
-//				request_state <= WAIT_SEND_WR_RESP;
-//			else if (wait_rd_resp_y)
-//				request_state <= WAIT_SEND_RD_RESP;
-//			else
-//				request_state <= IDLE;	
+			endcase	
 		end
 	end
 	
@@ -344,7 +327,7 @@ module fifo2spi (
 				spi_busy_y <= 0;
 	end
 	
-	assign trans_start_o = trans_start_o;
+	assign trans_start_o = trans_start_y;
 	assign spi_busy_o = spi_busy_y;
 	assign reg_data_o = reg_data_y;
 	assign reg_load_o = reg_load_y;
