@@ -275,8 +275,8 @@ module spi_master (
 		else if(tx_pull_y)
 		begin
 			fifo0 <= tx_data_i[7:0];
-			fifo1 <= tx_data_i[13:8];
-			fifo2 <= tx_data_i[23:14];
+			fifo1 <= tx_data_i[15:8];
+			fifo2 <= tx_data_i[23:16];
 			fifo3 <= tx_data_i[31:24];		
 		end
 		else if(ss_y)
@@ -317,16 +317,19 @@ module spi_master (
 	end
 	
 	/*if cpha = 0 put first bit to mosi line when turns chipselect active*/
-	reg en;
-	always@(posedge clk_i,negedge reset_n_i)
-	begin
-		if(!reset_n_i)
-			en <= 0;
-		else if(data_valid_y && !cpha_y)
-			en<= 1;	
-		else 
-			en <= 0;
-	end
+	
+	wire en;
+	assign en = (data_valid_y && !cpha_y) ? 1'b1 : 1'b0;
+//	reg en;
+//	always@(posedge clk_i,negedge reset_n_i)
+//	begin
+//		if(!reset_n_i)
+//			en <= 0;
+//		else if(data_valid_y && !cpha_y)
+//			en<= 1;	
+//		else 
+//			en <= 0;
+//	end
 	
 	reg mosi_y;
 	reg [31:0] rx_data_y;
