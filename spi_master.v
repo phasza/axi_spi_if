@@ -124,18 +124,18 @@ module spi_master (
 	assign shift_ce_y = (!cpha_y) ? sclk_fall_y : sclk_rise_y;
 	
 	reg sclk_delay_y;
-	reg clk_en_delay_y;
+	reg slave_select_en_delay_y;
 	always @ (posedge clk_i,negedge reset_n_i)
 	begin
 		if(!reset_n_i)
 		begin
 			sclk_delay_y <= 0;
-			clk_en_delay_y = 0;
+			slave_select_en_delay_y = 0;
 		end
 		else
 		begin
 			sclk_delay_y <= sclk_y;
-			clk_en_delay_y <= clock_en_y;
+			slave_select_en_delay_y <= slave_select_en_y;
 		end	
 	end
 		
@@ -151,7 +151,7 @@ module spi_master (
 		else
 		begin
 			spi_sclk_y <= sclk_delay_y;
-			ss_y = clk_en_delay_y;
+			ss_y = slave_select_en_delay_y;
 		end
 	end
 	
@@ -179,7 +179,7 @@ module spi_master (
 	reg trans_done_y;
 	reg [5:0] bit_counter_y;
 	reg [5:0] num_of_transferred_bits_y;
-	
+	reg slave_select_en_y;
 	/*seq*/
 	always @(posedge clk_i,negedge reset_n_i) 
 	begin
@@ -191,6 +191,7 @@ module spi_master (
 			transfer_en_y <= 0;
 			rx_push_y <= 0;
 			clock_en_y <= 0;
+			slave_select_en_y <= 0;
 			num_of_transferred_bits_y <= 0;
 		end
 		else
@@ -202,6 +203,7 @@ module spi_master (
 					transfer_en_y <= 0;
 					rx_push_y <= 0;
 					clock_en_y <= 0;
+					slave_select_en_y <= 0;
 					if(trans_start_i)
 					begin
 						state <= LOAD;
@@ -214,6 +216,7 @@ module spi_master (
 					trans_done_y <= 0;
 					transfer_en_y <= 1;
 					clock_en_y <= 1;
+					slave_select_en_y <= 1;
 					num_of_transferred_bits_y <= bits;
 					state <= TRANSFER;
 				end
@@ -303,8 +306,27 @@ module spi_master (
 //    -- mosi generation
 //    =============================================================================================*/		
 
+	
+	reg data_valid_y;
+	always@(posedge clk_i,negedge reset_n_i)
+	begin
+		if(!reset_n_i)
+			data_valid_y<=0;
+		else 
+			data_valid_y<= tx_pull_y;		
+	end
+	
 	/*if cpha = 0 put first bit to mosi line when turns chipselect active*/
-	wire en = (!cpha_y && !ss_y && clk_en_delay_y);
+	reg en;
+	always@(posedge clk_i,negedge reset_n_i)
+	begin
+		if(!reset_n_i)
+			en <= 0;
+		else if(data_valid_y && !cpha_y)
+			en<= 1;	
+		else 
+			en <= 0;
+	end
 	
 	reg mosi_y;
 	reg [31:0] rx_data_y;
